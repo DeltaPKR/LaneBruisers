@@ -1,0 +1,4 @@
+/home/deltapkr/source/LaneBruisers/build/CMakeFiles/server.dir
+/home/deltapkr/source/LaneBruisers/build/CMakeFiles/client.dir
+/home/deltapkr/source/LaneBruisers/build/CMakeFiles/edit_cache.dir
+/home/deltapkr/source/LaneBruisers/build/CMakeFiles/rebuild_cache.dir

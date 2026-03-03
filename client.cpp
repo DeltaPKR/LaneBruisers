@@ -1,58 +1,309 @@
-#include <iostream>
-#include <sys/socket.h>
+#include <SFML/Graphics.hpp>
 #include <arpa/inet.h>
+#include <sys/fcntl.h>
 #include <unistd.h>
-#include <string.h>
+#include <iostream>
+#include <vector>
+#include <sstream>
+#include <string>
 
 #define SERVER_IP "127.0.0.1"
-#define SERVER_PORT 11111
-#define BUFFER_SIZE 1024
+#define PORT 54000
+
+struct Unit { float x; int hp; };
 
 int main()
 {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0)
+    sockaddr_in serv{};
+    serv.sin_family = AF_INET;
+    serv.sin_port = htons(PORT);
+    inet_pton(AF_INET, SERVER_IP, &serv.sin_addr);
+    connect(sock, (sockaddr*)&serv, sizeof(serv));
+
+    // Make socket nonblocking for the game loop
+    fcntl(sock, F_SETFL, fcntl(sock, F_GETFL) | O_NONBLOCK);
+
+    sf::RenderWindow window(sf::VideoMode(800, 600), "LaneBruisers");
+    window.setFramerateLimit(60);
+
+    sf::Font font;
+    if (!font.loadFromFile("arial.ttf"))
     {
-        std::cerr << "Socket creation error\n";
+        std::cerr << "Could not load arial.ttf\n";
         return 1;
     }
 
-    sockaddr_in serv_addr;
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(SERVER_PORT);
+    sf::Text infoText;
+    infoText.setFont(font);
+    infoText.setCharacterSize(20);
+    infoText.setPosition(10, 10);
+    infoText.setFillColor(sf::Color::White);
 
-    if (inet_pton(AF_INET, SERVER_IP, &serv_addr.sin_addr) <= 0)
-    {
-        std::cerr << "Invalid address / Address not supported\n";
-        return 1;
-    }
+    sf::Text statusText;
+    statusText.setFont(font);
+    statusText.setCharacterSize(28);
+    statusText.setFillColor(sf::Color::Yellow);
+    statusText.setPosition(250, 270);
 
-    if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
-    {
-        std::cerr << "Connection Failed\n";
-        return 1;
-    }
+    sf::RectangleShape base1({ 40, 120 });
+    base1.setPosition(0, 240);
+    base1.setFillColor(sf::Color::Blue);
 
-    std::cout << "Connected to server at " << SERVER_IP << ":" << SERVER_PORT << "\n";
+    sf::RectangleShape base2({ 40, 120 });
+    base2.setPosition(760, 240);
+    base2.setFillColor(sf::Color::Red);
 
-    while (true)
-    {
-        std::string msg;
-        std::cout << "Enter message: ";
-        std::getline(std::cin, msg);
+    // HP bar background
+    sf::RectangleShape hpBg({ 200, 18 });
+    hpBg.setFillColor(sf::Color(80, 0, 0));
 
-        if (msg == "exit") break;
+    sf::RectangleShape hpBar({ 200, 18 });
+    hpBar.setFillColor(sf::Color::Green);
 
-        send(sock, msg.c_str(), msg.size(), 0);
+    int  myPlayerID = 0;   //assigned by server, used for HELLO on reconnect
+    int  mySide = 0;   // 1 or 2, tells us whose unit list is "mine"
+    int  coins = 0;
+    int  baseHP = 100;
+    int  enemyBaseHP = 100;
 
-        char buffer[BUFFER_SIZE] = {0};
-        int valread = recv(sock, buffer, BUFFER_SIZE, 0);
-        if (valread > 0)
+    std::vector<Unit> myUnits;
+    std::vector<Unit> enemyUnits;
+
+    // Per-key cooldown driven by values the server sends in START
+    sf::Clock keyClock[5];
+    float     KEY_COOLDOWN[5] = { 1.5f, 2.0f, 2.5f, 3.0f, 3.5f }; // defaults, overwritten by server
+
+    std::string recvBuf;               // accumulate partial TCP data
+    std::string gameStatus;            // "WAITING", "WIN", "LOSE", ""
+    bool gameOver = false;
+
+    auto processLine = [&](const std::string& line)
         {
-            std::cout << "Server replied: " << std::string(buffer, valread) << "\n";
+            if (line.empty()) return;
+
+            std::istringstream ss(line);
+            std::string type;
+            ss >> type;
+
+            if (type == "ID")
+            {
+                // Server tells us our player ID; store it for reconnection
+                ss >> myPlayerID;
+                // Send HELLO so server can remap our fd if we reconnected
+                std::string hello = "HELLO " + std::to_string(myPlayerID) + "\n";
+                send(sock, hello.c_str(), hello.size(), 0);
+            }
+            else if (type == "WAITING")
+            {
+                gameStatus = "Waiting for opponent...";
+            }
+            else if (type == "START")
+            {
+                ss >> mySide;
+                // Server also sends the 5 cooldown values
+                for (int i = 0; i < 5; i++)
+                    if (!(ss >> KEY_COOLDOWN[i])) break;
+                gameStatus = "";
+            }
+            else if (type == "STATE")
+            {
+                int enemyCoins;
+                ss >> coins >> enemyCoins >> baseHP >> enemyBaseHP;
+
+                std::string tag;
+                int count;
+
+                // Server always sends U1 (p1 units) then U2 (p2 units).
+                std::vector<Unit> u1list, u2list;
+
+                ss >> tag >> count;   // "U1" <n>
+                for (int i = 0; i < count; i++)
+                {
+                    Unit u; ss >> u.x >> u.hp;
+                    u1list.push_back(u);
+                }
+                ss >> tag >> count;   // "U2" <n>
+                for (int i = 0; i < count; i++)
+                {
+                    Unit u; ss >> u.x >> u.hp;
+                    u2list.push_back(u);
+                }
+
+                if (mySide == 1)
+                {
+                    myUnits = u1list;
+                    enemyUnits = u2list;
+                }
+                else
+                {
+                    myUnits = u2list;
+                    enemyUnits = u1list;
+                }
+            }
+            else if (type == "WIN")
+            {
+                gameStatus = "YOU WIN!";
+                gameOver = true;
+            }
+            else if (type == "LOSE")
+            {
+                gameStatus = "YOU LOSE!";
+                gameOver = true;
+            }
+        };
+
+    while (window.isOpen())
+    {
+        sf::Event e;
+        while (window.pollEvent(e))
+            if (e.type == sf::Event::Closed) window.close();
+
+        // Only read keyboard when this window is focused.
+        // Without this, both clients on the same machine react to every keypress
+        // and mirror each other's spawns exactly.
+        if (!gameOver && mySide != 0 && window.hasFocus())
+        {
+            const sf::Keyboard::Key keys[5] = {
+                sf::Keyboard::Num1, sf::Keyboard::Num2, sf::Keyboard::Num3,
+                sf::Keyboard::Num4, sf::Keyboard::Num5
+            };
+            for (int i = 0; i < 5; i++)
+            {
+                if (sf::Keyboard::isKeyPressed(keys[i]) &&
+                    keyClock[i].getElapsedTime().asSeconds() >= KEY_COOLDOWN[i])
+                {
+                    std::string cmd = "SPAWN " + std::to_string(i) + "\n";
+                    send(sock, cmd.c_str(), cmd.size(), 0);
+                    keyClock[i].restart();
+                }
+            }
         }
+
+        // read all available data into buffer, then process complete lines
+        char buf[4096];
+        int  r;
+        while ((r = recv(sock, buf, sizeof(buf) - 1, 0)) > 0)
+        {
+            recvBuf.append(buf, r);
+        }
+
+        size_t pos;
+        while ((pos = recvBuf.find('\n')) != std::string::npos)
+        {
+            std::string line = recvBuf.substr(0, pos);
+            recvBuf.erase(0, pos + 1);
+            processLine(line);
+        }
+
+        // Render
+        window.clear(sf::Color(30, 30, 30));
+
+        // Ground line
+        sf::RectangleShape ground({ 800, 2 });
+        ground.setPosition(0, 320);
+        ground.setFillColor(sf::Color(100, 100, 100));
+        window.draw(ground);
+
+        window.draw(base1);
+        window.draw(base2);
+
+        // My units (green, move right)
+        for (auto& u : myUnits)
+        {
+            sf::CircleShape c(12);
+            c.setOrigin(12, 12);
+            c.setPosition(u.x, 308);
+            c.setFillColor(sf::Color(50, 200, 50));
+            window.draw(c);
+        }
+
+        // Enemy units (red, move left)
+        for (auto& u : enemyUnits)
+        {
+            sf::CircleShape c(12);
+            c.setOrigin(12, 12);
+            c.setPosition(u.x, 308);
+            c.setFillColor(sf::Color(220, 50, 50));
+            window.draw(c);
+        }
+
+        // My base HP bar
+        float myHPFrac = std::max(0.f, (float)baseHP / 100.f);
+        float enemyHPFrac = std::max(0.f, (float)enemyBaseHP / 100.f);
+
+        hpBg.setSize({ 200, 18 });
+        hpBg.setPosition(10, 570);
+        window.draw(hpBg);
+        hpBar.setSize({ 200.f * myHPFrac, 18 });
+        hpBar.setPosition(10, 570);
+        window.draw(hpBar);
+
+        hpBg.setPosition(590, 570);
+        window.draw(hpBg);
+        hpBar.setSize({ 200.f * enemyHPFrac, 18 });
+        hpBar.setFillColor(sf::Color(200, 50, 50));
+        hpBar.setPosition(590, 570);
+        window.draw(hpBar);
+        hpBar.setFillColor(sf::Color::Green);  // reset
+
+        // HUD text
+        std::string hud =
+            "Coins: " + std::to_string(coins) +
+            "   My HP: " + std::to_string(baseHP) +
+            "   Enemy HP: " + std::to_string(enemyBaseHP);
+        infoText.setString(hud);
+        window.draw(infoText);
+
+        // Per-unit spawn slot bars (show cooldown progress)
+        const int   slotCost[5] = { 5, 7, 10, 12, 15 };
+        const char* slotLabel[5] = { "1", "2", "3", "4", "5" };
+        const sf::Color READY(50, 200, 50);
+        const sf::Color NOTREADY(120, 120, 120);
+        const sf::Color NOCOIN(180, 60, 60);
+
+        sf::RectangleShape slotBg({ 60, 40 });
+        sf::RectangleShape slotFill({ 60, 40 });
+        sf::Text slotText;
+        slotText.setFont(font);
+        slotText.setCharacterSize(13);
+
+        for (int i = 0; i < 5; i++)
+        {
+            float sx = 10.f + i * 70.f;
+            float sy = 38.f;
+
+            float elapsed = keyClock[i].getElapsedTime().asSeconds();
+            float fraction = std::min(elapsed / KEY_COOLDOWN[i], 1.f);
+            bool  ready = fraction >= 1.f;
+            bool  canAfford = coins >= slotCost[i];
+
+            // Background
+            slotBg.setPosition(sx, sy);
+            slotBg.setFillColor(sf::Color(40, 40, 40));
+            window.draw(slotBg);
+
+            // Progress fill
+            slotFill.setSize({ 60.f * fraction, 40.f });
+            slotFill.setPosition(sx, sy);
+            slotFill.setFillColor(ready ? (canAfford ? READY : NOCOIN) : NOTREADY);
+            window.draw(slotFill);
+
+            // Label: key number + cost
+            slotText.setString("[" + std::string(slotLabel[i]) + "]\n$" + std::to_string(slotCost[i]));
+            slotText.setFillColor(sf::Color::White);
+            slotText.setPosition(sx + 4.f, sy + 4.f);
+            window.draw(slotText);
+        }
+
+        if (!gameStatus.empty())
+        {
+            statusText.setString(gameStatus);
+            window.draw(statusText);
+        }
+
+        window.display();
     }
 
     close(sock);
-    return 0;
 }
