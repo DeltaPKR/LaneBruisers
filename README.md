@@ -22,7 +22,6 @@ Lane Bruisers is a 2D RTS 1vs1 base defence game written in c++. At the start of
 |  3  |  10  | 40 |  6  |   2.5s   |
 |  4  |  12  | 50 |  8  |   3.0s   |
 |  5  |  15  | 60 |  10 |   3.5s   |
-|-----|------|----|-----|----------|
 
 
 ##### Dependencies
