@@ -1,4 +1,4 @@
-#include <SFML/Graphics.hpp>
+﻿#include <SFML/Graphics.hpp>
 #include <arpa/inet.h>
 #include <sys/fcntl.h>
 #include <unistd.h>
@@ -12,18 +12,16 @@
 
 struct Unit { float x; int hp; };
 
+//centers an sf::Text horizontally inside a given container width
+auto centerText = [](sf::Text& t, float containerWidth, float y)  
+    {                                                                  
+        sf::FloatRect b = t.getLocalBounds();                          
+        t.setOrigin(b.left + b.width / 2.f, b.top);                   
+        t.setPosition(containerWidth / 2.f, y);                       
+    };                                                                 
+
 int main()
 {
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in serv{};
-    serv.sin_family = AF_INET;
-    serv.sin_port = htons(PORT);
-    inet_pton(AF_INET, SERVER_IP, &serv.sin_addr);
-    connect(sock, (sockaddr*)&serv, sizeof(serv));
-
-    // Make socket nonblocking for the game loop
-    fcntl(sock, F_SETFL, fcntl(sock, F_GETFL) | O_NONBLOCK);
-
     sf::RenderWindow window(sf::VideoMode(800, 600), "LaneBruisers");
     window.setFramerateLimit(60);
 
@@ -33,6 +31,107 @@ int main()
         std::cerr << "Could not load arial.ttf\n";
         return 1;
     }
+
+    // MAIN MENU
+    sf::Text titleText;                                                    
+    titleText.setFont(font);                                              
+    titleText.setCharacterSize(72);                                        
+    titleText.setFillColor(sf::Color(255, 200, 50));                      
+    titleText.setStyle(sf::Text::Bold);                                   
+    titleText.setString("LaneBruisers");                                  
+    centerText(titleText, 800, 110);                                      
+
+    sf::Text subtitleText;                                                
+    subtitleText.setFont(font);                                           
+    subtitleText.setCharacterSize(20);                                   
+    subtitleText.setFillColor(sf::Color(180, 180, 180));                  
+    subtitleText.setString("Real-time Multiplayer Lane Battle");           
+    centerText(subtitleText, 800, 205);                                   
+
+    sf::RectangleShape menuSep({ 500, 2 });                                  
+    menuSep.setFillColor(sf::Color(255, 200, 50, 100));                    
+    menuSep.setPosition(150, 255);                                         
+
+    // returns a filled rect + centered label             
+    auto makeButton = [&](const std::string& label, float y,               
+        sf::Color fill)                                 
+        -> std::pair<sf::RectangleShape, sf::Text>                         
+        {                                                                  
+            sf::RectangleShape rect({ 200, 55 });                      
+            rect.setPosition(300, y);                                      
+            rect.setFillColor(fill);                                   
+            rect.setOutlineThickness(2);                                 
+            rect.setOutlineColor(sf::Color(255, 255, 255, 50));                 
+
+            sf::Text txt;                                                   
+            txt.setFont(font);                                              
+            txt.setCharacterSize(26);                                   
+            txt.setFillColor(sf::Color::White);                                
+            txt.setStyle(sf::Text::Bold);                             
+            txt.setString(label);                                              
+            sf::FloatRect b = txt.getLocalBounds();                            
+            txt.setOrigin(b.left + b.width / 2.f, b.top + b.height / 2.f);  
+            txt.setPosition(400, y + 27);                                     
+            return { rect, txt };                                               
+        };                                                                     
+
+    auto [playRect, playLabel] = makeButton("PLAY", 295, sf::Color(40, 120, 40));  
+    auto [quitRect, quitLabel] = makeButton("QUIT", 370, sf::Color(120, 40, 40));  
+
+    sf::Text hintText;                                             
+    hintText.setFont(font);                                                
+    hintText.setCharacterSize(15);                                        
+    hintText.setFillColor(sf::Color(100, 100, 100));                  
+
+    bool inMenu = true;                                                   
+    while (inMenu && window.isOpen())                                      
+    {                                                                     
+        sf::Vector2i mouse = sf::Mouse::getPosition(window);               
+
+        bool hoverPlay = playRect.getGlobalBounds().contains(             
+            (float)mouse.x, (float)mouse.y);             
+        bool hoverQuit = quitRect.getGlobalBounds().contains(             
+            (float)mouse.x, (float)mouse.y);             
+
+        // bright button when hovered                                   
+        playRect.setFillColor(hoverPlay ? sf::Color(70, 180, 70)            
+            : sf::Color(40, 120, 40));          
+        quitRect.setFillColor(hoverQuit ? sf::Color(180, 70, 70)            
+            : sf::Color(120, 40, 40));          
+
+        sf::Event me;                                                      
+        while (window.pollEvent(me))                                       
+        {                                                                  
+            if (me.type == sf::Event::Closed) window.close();             
+            if (me.type == sf::Event::KeyPressed &&                        
+                me.key.code == sf::Keyboard::Escape) window.close();      
+            if (me.type == sf::Event::MouseButtonReleased &&               
+                me.mouseButton.button == sf::Mouse::Left)                  
+            {                                                              
+                if (hoverPlay) inMenu = false;                              
+                if (hoverQuit) window.close();                             
+            }                                                              
+        }                                                                  
+
+        window.clear(sf::Color(18, 18, 28));                                
+        window.draw(titleText);                                            
+        window.draw(subtitleText);                                         
+        window.draw(menuSep);                                              
+        window.draw(playRect);   window.draw(playLabel);                   
+        window.draw(quitRect);   window.draw(quitLabel);                   
+        window.draw(hintText);                                             
+        window.display();                                                  
+    }                                                                      
+
+    if (!window.isOpen()) return 0;
+
+    int sock = socket(AF_INET, SOCK_STREAM, 0);                    
+    sockaddr_in serv{};                                                   
+    serv.sin_family = AF_INET;                                            
+    serv.sin_port = htons(PORT);                                         
+    inet_pton(AF_INET, SERVER_IP, &serv.sin_addr);                         
+    connect(sock, (sockaddr*)&serv, sizeof(serv));                         
+    fcntl(sock, F_SETFL, fcntl(sock, F_GETFL) | O_NONBLOCK);              
 
     sf::Text infoText;
     infoText.setFont(font);

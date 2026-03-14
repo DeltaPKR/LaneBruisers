@@ -1,4 +1,4 @@
-#include <sys/epoll.h>
+ï»¿#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
@@ -104,7 +104,7 @@ void updateMatch(Match& m, float dt)
 {
     if (!m.running) return;
 
-    // coins is now float — this actually accumulates properly
+    // coins is now float ï¿½ this actually accumulates properly
     m.p1->coins += 2.f * dt;
     m.p2->coins += 2.f * dt;
 
@@ -213,7 +213,7 @@ void spawnUnit(Player* p, int type)
     const int cost[5] = { 5, 7, 10, 12, 15 };
     if (p->coins < cost[type]) return;
 
-    // Server-side cooldown — reject the request if not enough time has passed
+    // Server-side cooldown ï¿½ reject the request if not enough time has passed
     auto now = Clock::now();
     float elapsed = std::chrono::duration<float>(now - p->lastSpawn[type]).count();
     if (elapsed < SPAWN_COOLDOWN[type]) return;
