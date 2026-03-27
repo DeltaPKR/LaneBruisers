@@ -26,6 +26,5 @@ Lane Bruisers is a 2D RTS 1vs1 base defence game written in c++. At the start of
 
 ##### Dependencies
 
- - Linux, a C++17 compiler (or higher), SFML 2.x and arial.ttf in the working directory (for the text)
-
+ - Linux, a C++17 compiler (or higher) and SFML 2.x
 
