@@ -6,19 +6,126 @@
 #include <vector>
 #include <sstream>
 #include <string>
+#include <cmath>
+#include <random>
 
 #define SERVER_IP "127.0.0.1"
 #define PORT 54000
 
 struct Unit { float x; int hp; };
 
-//centers an sf::Text horizontally inside a given container width
-auto centerText = [](sf::Text& t, float containerWidth, float y)  
-    {                                                                  
-        sf::FloatRect b = t.getLocalBounds();                          
-        t.setOrigin(b.left + b.width / 2.f, b.top);                   
-        t.setPosition(containerWidth / 2.f, y);                       
-    };                                                                 
+sf::Texture generateBackground()                                           
+{                                                                          
+    sf::Image img;                                                         
+    img.create(800, 600, sf::Color::Black);                                
+
+    // Sky: horizontal colour bands for gradient look 
+    struct Band { int y0, y1; uint8_t r, g, b; };                         
+    Band bands[] = {                                                       
+        {  0,  70, 12,  5, 30},   // deep purple                    
+        { 70, 140, 22, 10, 55},   // dark violet                          
+        {140, 200, 60, 20, 75},   // purple                               
+        {200, 252,130, 50, 70},   // mauve-rose                           
+        {252, 295,205, 95, 50},   // orange                          
+        {295, 320,230,168, 55},   // gold horizon                         
+    };                                                                     
+    for (auto& b : bands)                                                  
+        for (int y = b.y0; y < b.y1; y++)                                 
+            for (int x = 0; x < 800; x++)                                 
+                img.setPixel(x, y, { b.r, b.g, b.b });                     
+
+    // Stars: fixed seed so the pattern is identical every run             
+    std::mt19937 rng(42);                                                  
+    std::uniform_int_distribution<int> distX(0, 799);                     
+    std::uniform_int_distribution<int> distY(0, 185);                     
+    std::uniform_int_distribution<int> distB(130, 255);                   
+    for (int i = 0; i < 90; i++)                                          
+    {                                                                      
+        int b = distB(rng);                                                
+        img.setPixel(distX(rng), distY(rng),                              
+            { (uint8_t)b, (uint8_t)b, (uint8_t)b });               
+    }                                                                      
+
+    // Moon: solid pixel disc, top-right area                              
+    const int mx = 668, my = 68, mr = 22;                                 
+    for (int y = my - mr; y <= my + mr; y++)                              
+        for (int x = mx - mr; x <= mx + mr; x++)                         
+            if (x >= 0 && x < 800 && y >= 0 &&                           
+                (x - mx) * (x - mx) + (y - my) * (y - my) <= mr * mr)                  
+                img.setPixel(x, y, { 235, 225, 172 });                      
+
+    // Hill silhouettes: 3 layers, each darker/closer than the last       
+    // Using sin() with different frequencies gives organic pixel shapes   
+    auto drawHills = [&](double freq1, double freq2,                       
+        double phase2, int baseY,                        
+        int amp1, int amp2,                              
+        uint8_t r, uint8_t g, uint8_t bv)               
+        {                                                                      
+            for (int x = 0; x < 800; x++)                                     
+            {                                                                  
+                int top = baseY                                                
+                    + (int)(amp1 * sin(x * freq1))                        
+                    + (int)(amp2 * sin(x * freq2 + phase2));              
+                for (int y = top; y < 320; y++)                               
+                    img.setPixel(x, y, { r, g, bv });                           
+            }                                                                  
+        };                                                                     
+    drawHills(0.013, 0.029, 1.1, 222, 32, 14, 18, 22, 42); // far       
+    drawHills(0.017, 0.038, 0.4, 255, 24, 11, 28, 32, 55); // mid       
+    drawHills(0.021, 0.047, 2.5, 279, 16, 9, 18, 38, 25); // near      
+
+    // Ground fill                                                         
+    for (int y = 320; y < 600; y++)                                       
+        for (int x = 0; x < 800; x++)                                     
+            img.setPixel(x, y, { 30, 22, 14 });                             
+
+    // Grass strip along the top of the ground                            
+    for (int y = 320; y < 327; y++)                                       
+        for (int x = 0; x < 800; x++)                                     
+            img.setPixel(x, y, { 34, 70, 22 });                             
+
+    // Dirt lane: slightly lighter strip where units walk                  
+    for (int y = 308; y < 320; y++)                                       
+        for (int x = 42; x < 758; x++)                                    
+            img.setPixel(x, y, { 52, 40, 25 });                             
+
+    // Rock pattern on the lane (two offset rows of stones)         
+    const sf::Color mortar = { 38, 28, 16 };                                
+    for (int row = 0; row < 2; row++)                                     
+    {                                                                      
+        int baseY = 309 + row * 5;                                       
+        int offset = row * 11;                                             
+        for (int col = 0; col < 50; col++)                                
+        {                                                                  
+            int bx = 42 + col * 22 + offset;                              
+            if (bx + 20 >= 758) break;                                    
+            // horizontal mortar lines (top + bottom of stone)             
+            for (int dx = 0; dx <= 20; dx++)                              
+            {                                                              
+                img.setPixel(bx + dx, baseY, mortar);                 
+                img.setPixel(bx + dx, baseY + 4, mortar);                 
+            }                                                              
+            // vertical mortar lines (left + right)                       
+            for (int dy = 0; dy < 4; dy++)                                
+            {                                                              
+                img.setPixel(bx, baseY + dy, mortar);                
+                img.setPixel(bx + 20, baseY + dy, mortar);                
+            }                                                              
+        }                                                                  
+    }                                                                      
+
+    sf::Texture tex;                                                       
+    tex.loadFromImage(img);                                                
+    tex.setSmooth(false);  // keep pixel-art crispness          
+    return tex;                                                            
+}                                                                          
+
+auto centerText = [](sf::Text& t, float containerWidth, float y)
+    {
+        sf::FloatRect b = t.getLocalBounds();
+        t.setOrigin(b.left + b.width / 2.f, b.top);
+        t.setPosition(containerWidth / 2.f, y);
+    };
 
 int main()
 {
@@ -31,6 +138,9 @@ int main()
         std::cerr << "Could not load arial.ttf\n";
         return 1;
     }
+
+    sf::Texture bgTex = generateBackground();                           
+    sf::Sprite  bgSprite(bgTex);                                          
 
     // MAIN MENU
     sf::Text titleText;                                                    
@@ -81,7 +191,12 @@ int main()
     sf::Text hintText;                                             
     hintText.setFont(font);                                                
     hintText.setCharacterSize(15);                                        
-    hintText.setFillColor(sf::Color(100, 100, 100));                  
+    hintText.setFillColor(sf::Color(100, 100, 100));      
+    hintText.setString("Press ESC to quit");
+    centerText(hintText, 800, 558);
+
+    sf::RectangleShape menuOverlay({ 800, 600 });                          
+    menuOverlay.setFillColor(sf::Color(0, 0, 0, 155));
 
     bool inMenu = true;                                                   
     while (inMenu && window.isOpen())                                      
@@ -113,7 +228,9 @@ int main()
             }                                                              
         }                                                                  
 
-        window.clear(sf::Color(18, 18, 28));                                
+        window.clear(sf::Color::Black);                                
+        window.draw(bgSprite);                                            
+        window.draw(menuOverlay);                                                                 
         window.draw(titleText);                                            
         window.draw(subtitleText);                                         
         window.draw(menuSep);                                              
@@ -296,13 +413,8 @@ int main()
         }
 
         // Render
-        window.clear(sf::Color(30, 30, 30));
-
-        // Ground line
-        sf::RectangleShape ground({ 800, 2 });
-        ground.setPosition(0, 320);
-        ground.setFillColor(sf::Color(100, 100, 100));
-        window.draw(ground);
+        window.clear(sf::Color::Black);
+        window.draw(bgSprite); // draw background first
 
         window.draw(base1);
         window.draw(base2);
