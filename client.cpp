@@ -262,13 +262,25 @@ int main()
     statusText.setFillColor(sf::Color::Yellow);
     statusText.setPosition(250, 270);
 
-    sf::RectangleShape base1({ 40, 120 });
-    base1.setPosition(0, 240);
-    base1.setFillColor(sf::Color::Blue);
+    sf::Texture towerTex;
+    towerTex.setSmooth(false);
+    if (!towerTex.loadFromFile("TowerSprite.png")) 
+    {
+        std::cerr << "Could not load TowerSprite.png\n";
+        return 1;
+    }
 
-    sf::RectangleShape base2({ 40, 120 });
-    base2.setPosition(760, 240);
-    base2.setFillColor(sf::Color::Red);
+    auto tsz = towerTex.getSize();                                 
+    const float TOWER_SCALE = 1.5f;
+
+    sf::Sprite base1(towerTex);    
+    base1.setScale(TOWER_SCALE, TOWER_SCALE);
+    base1.setPosition(0.f, 270.f - (float)tsz.y);                 
+
+    sf::Sprite base2(towerTex);                                   
+    base2.setTextureRect({ (int)tsz.x, 0, -(int)tsz.x, (int)tsz.y });
+    base2.setScale(TOWER_SCALE, TOWER_SCALE);
+    base2.setPosition(740.f - (int)tsz.x, 270.f - (float)tsz.y);
 
     // HP bar background
     sf::RectangleShape hpBg({ 200, 18 });
