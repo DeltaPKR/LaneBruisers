@@ -1,0 +1,1 @@
+When you build this project, remove every file from here (except this one) into the /build directory.
