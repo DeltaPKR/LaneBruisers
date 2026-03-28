@@ -20,6 +20,7 @@ struct Unit
     float hp;   // float so fractional dmg*dt works correctly
     int   dmg;
     float speed;
+    int type; // for sprite
 };
 
 // How long (seconds) a player must wait between spawning each unit type
@@ -86,11 +87,11 @@ void sendState(Match& m)
 
             msg += " U1 " + std::to_string(mine.size());
             for (auto& u : mine)
-                msg += " " + std::to_string((int)u.x) + " " + std::to_string((int)u.hp);
+                msg += " " + std::to_string((int)u.x) + " " + std::to_string((int)u.hp) + " " + std::to_string(u.type);
 
             msg += " U2 " + std::to_string(enemy.size());
             for (auto& u : enemy)
-                msg += " " + std::to_string((int)u.x) + " " + std::to_string((int)u.hp);
+                msg += " " + std::to_string((int)u.x) + " " + std::to_string((int)u.hp) + " " + std::to_string(u.type);
 
             msg += "\n";
             sendMsg(p->fd, msg);
@@ -115,7 +116,7 @@ void updateMatch(Match& m, float dt)
     for (auto& a : m.u1)
         for (auto& b : m.u2)
         {
-            if (std::abs(a.x - b.x) < 20.f)
+            if (std::abs(a.x - b.x) < 30.f)
             {
                 a.hp -= (float)b.dmg * dt * 10.f;
                 b.hp -= (float)a.dmg * dt * 10.f;
@@ -225,6 +226,7 @@ void spawnUnit(Player* p, int type)
     u.hp = 20.f + type * 10.f;
     u.dmg = 2 + type * 2;
     u.speed = 60.f;
+    u.type = type;
 
     // compare pointer identity to decide which side the player is on
     if (m.p1 == p)

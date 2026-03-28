@@ -12,7 +12,7 @@
 #define SERVER_IP "127.0.0.1"
 #define PORT 54000
 
-struct Unit { float x; int hp; };
+struct Unit { float x; int hp; int type; };
 
 sf::Texture generateBackground()                                           
 {                                                                          
@@ -270,6 +270,29 @@ int main()
         return 1;
     }
 
+    sf::Texture unitTex[5];
+
+    std::string files[5] =
+    {
+        "Unit1Sprite.png",
+        "Unit2Sprite.png",
+        "Unit3Sprite.png",
+        "Unit4Sprite.png",
+        "Unit5Sprite.png"
+    };
+
+    for (int i = 0; i < 5; i++)
+    {
+        if (!unitTex[i].loadFromFile(files[i]))
+        {
+            std::cerr << "Could not load Unit" << i << "Sprite.png\n";
+            return 1;
+        }
+
+        unitTex[i].setSmooth(false);
+
+    }
+
     auto tsz = towerTex.getSize();                                 
     const float TOWER_SCALE = 1.5f;
 
@@ -348,13 +371,13 @@ int main()
                 ss >> tag >> count;   // "U1" <n>
                 for (int i = 0; i < count; i++)
                 {
-                    Unit u; ss >> u.x >> u.hp;
+                    Unit u; ss >> u.x >> u.hp >> u.type;
                     u1list.push_back(u);
                 }
                 ss >> tag >> count;   // "U2" <n>
                 for (int i = 0; i < count; i++)
                 {
-                    Unit u; ss >> u.x >> u.hp;
+                    Unit u; ss >> u.x >> u.hp >> u.type;
                     u2list.push_back(u);
                 }
 
@@ -434,21 +457,27 @@ int main()
         // My units (green, move right)
         for (auto& u : myUnits)
         {
-            sf::CircleShape c(12);
-            c.setOrigin(12, 12);
-            c.setPosition(u.x, 308);
-            c.setFillColor(sf::Color(50, 200, 50));
-            window.draw(c);
+            sf::Sprite s(unitTex[u.type]);
+
+            auto sz = unitTex[u.type].getSize();
+            s.setOrigin(sz.x / 2.f, sz.y / 1.5f);
+            s.setPosition(u.x, 308);
+            s.setScale(2.f, 2.f);
+
+            window.draw(s);
         }
 
         // Enemy units (red, move left)
         for (auto& u : enemyUnits)
         {
-            sf::CircleShape c(12);
-            c.setOrigin(12, 12);
-            c.setPosition(u.x, 308);
-            c.setFillColor(sf::Color(220, 50, 50));
-            window.draw(c);
+            sf::Sprite s(unitTex[u.type]);
+
+            auto sz = unitTex[u.type].getSize();
+            s.setOrigin(sz.x / 2.f, sz.y / 1.5f);
+            s.setPosition(u.x, 308);
+            s.setScale(-2.f, 2.f);   // flip horizontally
+
+            window.draw(s);
         }
 
         // My base HP bar
